@@ -1,0 +1,48 @@
+name: Tech Deal Scraper
+
+on:
+  schedule:
+    # Runs automatically at 7:30 AM and 6:00 PM Eastern Time
+    - cron: '30 7 * * *'
+      timezone: 'America/New_York'
+    - cron: '0 18 * * *'
+      timezone: 'America/New_York'
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: 'Comma-separated sources (all, craigslist, facebook, ebay, woot, backmarket, swappa, retail)'
+        required: true
+        default: 'all'
+
+permissions:
+  contents: write
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Deal Scraper
+        env:
+          SOURCES: ${{ github.event.inputs.sources || 'all' }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          FB_COOKIE: ${{ secrets.FB_COOKIE }}
+        run: python scraper.py
+
+      - name: Commit & Push Updated Deals
+        run: |
+          git config user.name "DealBot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/deals.json
+          git diff --staged --quiet || git commit -m "Update deals [skip ci]"
+          git push
