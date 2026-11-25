@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Wilmington Deal Hunter</title>
+  <style>
+    :root { --bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --danger: #ef4444; --green: #22c55e; --text: #f8fafc; --muted: #94a3b8; }
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { margin: 0; background: var(--bg); color: var(--text); padding-bottom: 80px; }
+    header { position: sticky; top: 0; background: rgba(15,23,42,0.95); backdrop-filter: blur(8px); padding: 14px 16px; border-bottom: 1px solid #334155; z-index: 10; display: flex; justify-content: space-between; align-items: center; }
+    h1 { font-size: 1.15rem; margin: 0; color: var(--accent); }
+    .sub { font-size: 0.75rem; color: var(--muted); }
+    .btn { background: var(--accent); color: #0f172a; border: none; padding: 8px 14px; border-radius: 8px; font-weight: 700; font-size: 0.85rem; cursor: pointer; }
+    .btn-sm { padding: 6px 10px; font-size: 0.78rem; }
+    .btn-danger { background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.4); }
+    .panel { background: var(--card); margin: 12px; padding: 14px; border-radius: 12px; border: 1px solid #334155; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+    .chip { background: #0f172a; border: 1px solid #334155; color: var(--muted); padding: 6px 10px; border-radius: 20px; font-size: 0.78rem; cursor: pointer; user-select: none; }
+    .chip.active { background: rgba(56,189,248,0.2); border-color: var(--accent); color: var(--text); font-weight: 600; }
+    .deal { background: var(--card); margin: 10px 12px; padding: 14px; border-radius: 12px; border: 1px solid #334155; display: flex; flex-direction: column; gap: 8px; }
+    .badge { display: inline-block; font-size: 0.7rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; background: #334155; color: var(--accent); }
+    .badge.green { background: rgba(34,197,94,0.18); color: #86efac; }
+    .price { font-size: 1.2rem; font-weight: 800; color: var(--green); }
+    .title { font-size: 0.95rem; font-weight: 600; line-height: 1.35; color: var(--text); text-decoration: none; }
+    .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    input { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; margin-top: 6px; margin-bottom: 10px; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>⚡ Deal Hunter (Wilmington 30mi)</h1>
+      <div class="sub" id="lastUpdated">Loading deals...</div>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button class="btn btn-sm" onclick="togglePanel('scrapePanel')">Run Scrape</button>
+      <button class="btn btn-sm" style="background:#334155;color:#fff;" onclick="togglePanel('setupPanel')">⚙️</button>
+    </div>
+  </header>
+
+  <!-- Setup Panel -->
+  <div class="panel hidden" id="setupPanel">
+    <strong>GitHub Connection (Stored only on your S25+)</strong>
+    <div class="sub">Required once so your phone can trigger scrapes & permanently delete items.</div>
+    <input id="ghUser" placeholder="GitHub Username (e.g., johndoe)" />
+    <input id="ghRepo" placeholder="Repo Name (wilmington-deal-hunter)" value="wilmington-deal-hunter" />
+    <input id="ghToken" type="password" placeholder="GitHub Personal Access Token (ghp_...)" />
+    <button class="btn" onclick="saveConfig()">Save & Load Deals</button>
+  </div>
+
+  <!-- Manual Scrape Control Panel -->
+  <div class="panel hidden" id="scrapePanel">
+    <strong>Manual Scrape Trigger</strong>
+    <div class="sub">Select sources to scrape right now:</div>
+    <div class="chips" id="sourceChips">
+      <div class="chip active" data-src="all">All Sources</div>
+      <div class="chip" data-src="craigslist">Craigslist</div>
+      <div class="chip" data-src="facebook">FB Marketplace</div>
+      <div class="chip" data-src="ebay">eBay</div>
+      <div class="chip" data-src="woot">Woot!</div>
+      <div class="chip" data-src="backmarket">Back Market</div>
+      <div class="chip" data-src="swappa">Swappa</div>
+      <div class="chip" data-src="retail">Amazon / Newegg / BestBuy / Walmart / MicroCenter</div>
+    </div>
+    <button class="btn" style="width:100%;" onclick="triggerScrape()">🚀 Start Selected Scrape</button>
+    <div class="sub" id="scrapeStatus" style="margin-top:8px;"></div>
+  </div>
+
+  <!-- Filter Bar -->
+  <div style="padding: 8px 12px 0;">
+    <input id="searchFilter" placeholder="Filter current deals (e.g., laptop, soldering, RTX, tablet)..." oninput="renderDeals()" />
+  </div>
+
+  <div id="dealsList"></div>
+
+  <script>
+    let cfg = JSON.parse(localStorage.getItem("dh_cfg") || "{}");
+    let dealsData = { items: [] };
+
+    if (!cfg.user || !cfg.token) document.getElementById("setupPanel").classList.remove("hidden");
+    else {
+      document.getElementById("ghUser").value = cfg.user;
+      document.getElementById("ghRepo").value = cfg.repo || "wilmington-deal-hunter";
+      document.getElementById("ghToken").value = cfg.token;
+      fetchDeals();
+    }
+
+    function togglePanel(id) {
+      document.getElementById(id).classList.toggle("hidden");
+    }
+
+    function saveConfig() {
+      cfg = {
+        user: document.getElementById("ghUser").value.trim(),
+        repo: document.getElementById("ghRepo").value.trim(),
+        token: document.getElementById("ghToken").value.trim()
+      };
+      localStorage.setItem("dh_cfg", JSON.stringify(cfg));
+      document.getElementById("setupPanel").classList.add("hidden");
+      fetchDeals();
+    }
+
+    // Chip selection logic (All vs Individual/Multiple)
+    document.querySelectorAll("#sourceChips .chip").forEach(chip => {
+      chip.addEventListener("click", () => {
+        const src = chip.dataset.src;
+        const allChip = document.querySelector('.chip[data-src="all"]');
+        if (src === "all") {
+          document.querySelectorAll("#sourceChips .chip").forEach(c => c.classList.remove("active"));
+          chip.classList.add("active");
+        } else {
+          allChip.classList.remove("active");
+          chip.classList.toggle("active");
+          if (!document.querySelector("#sourceChips .chip.active")) allChip.classList.add("active");
+        }
+      });
+    });
+
+    async function ghApi(path, method = "GET", body = null) {
+      const res = await fetch(`https://api.github.com/repos/${cfg.user}/${cfg.repo}/${path}`, {
+        method,
+        headers: {
+          "Authorization": `Bearer ${cfg.token}`,
+          "Accept": "application/vnd.github+json",
+          "Content-Type": "application/json"
+        },
+        body: body ? JSON.stringify(body) : null
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.status === 204 ? null : res.json();
+    }
+
+    async function fetchDeals() {
+      try {
+        const file = await ghApi("contents/data/deals.json");
+        dealsData = JSON.parse(atob(file.content));
+        dealsData._sha = file.sha;
+        document.getElementById("lastUpdated").innerText = `Updated: ${dealsData.last_updated} (${dealsData.items.length} deals)`;
+        renderDeals();
+      } catch (e) {
+        document.getElementById("lastUpdated").innerText = "Error loading deals—check ⚙️ settings.";
+      }
+    }
+
+    function renderDeals() {
+      const q = document.getElementById("searchFilter").value.toLowerCase();
+      const container = document.getElementById("dealsList");
+      const filtered = dealsData.items.filter(i =>
+        i.title.toLowerCase().includes(q) || i.source.toLowerCase().includes(q)
+      );
+      container.innerHTML = filtered.map(item => `
+        <div class="deal" id="card-${item.id}">
+          <div class="row">
+            <span class="badge">${item.source}</span>
+            <span class="badge green">${item.condition}</span>
+          </div>
+          <a class="title" href="${item.url}" target="_blank" rel="noopener">${item.title}</a>
+          <div class="row">
+            <span class="price">${item.price ? '$' + item.price.toFixed(0) : 'View Price'}</span>
+            <div style="display:flex; gap:8px;">
+              <a class="btn btn-sm" href="${item.url}" target="_blank" style="text-decoration:none;">Open</a>
+              <button class="btn btn-sm btn-danger" onclick="deleteForever('${item.id}')">Delete Forever</button>
+            </div>
+          </div>
+        </div>
+      `).join("") || `<div class="panel">No matching deals right now. Tap <b>Run Scrape</b> to check!</div>`;
+    }
+
+    async function deleteForever(id) {
+      document.getElementById(`card-${id}`)?.remove();
+      dealsData.items = dealsData.items.filter(i => i.id !== id);
+      try {
+        // 1. Add ID to permanent blacklist.json
+        const blFile = await ghApi("contents/data/blacklist.json");
+        const bl = JSON.parse(atob(blFile.content));
+        if (!bl.includes(id)) bl.push(id);
+        await ghApi("contents/data/blacklist.json", "PUT", {
+          message: `Blacklist ${id}`,
+          content: btoa(JSON.stringify(bl, null, 2)),
+          sha: blFile.sha
+        });
+
+        // 2. Remove from deals.json
+        const dealsFile = await ghApi("contents/data/deals.json");
+        const current = JSON.parse(atob(dealsFile.content));
+        current.items = current.items.filter(i => i.id !== id);
+        await ghApi("contents/data/deals.json", "PUT", {
+          message: `Remove ${id}`,
+          content: btoa(JSON.stringify(current, null, 2)),
+          sha: dealsFile.sha
+        });
+      } catch (e) {
+        alert("Failed to sync delete to GitHub: " + e.message);
+      }
+    }
+
+    async function triggerScrape() {
+      const selected = Array.from(document.querySelectorAll("#sourceChips .chip.active")).map(c => c.dataset.src);
+      const status = document.getElementById("scrapeStatus");
+      status.innerText = "Dispatching cloud scraper...";
+      try {
+        await ghApi("actions/workflows/scrape.yml/dispatches", "POST", {
+          ref: "main",
+          inputs: { sources: selected.join(",") }
+        });
+        status.innerText = "✅ Scrape started! You'll get an ntfy push alert in ~45 seconds when done.";
+        setTimeout(fetchDeals, 50000);
+      } catch (e) {
+        status.innerText = "❌ Error: " + e.message;
+      }
+    }
+  </script>
+</body>
+</html>
