@@ -42,17 +42,15 @@
     </div>
   </header>
 
-  <!-- Setup Panel -->
   <div class="panel hidden" id="setupPanel">
     <strong>GitHub Connection (Stored only on your S25+)</strong>
     <div class="sub">Required once so your phone can trigger scrapes & permanently delete items.</div>
-    <input id="ghUser" placeholder="GitHub Username (e.g., johndoe)" />
+    <input id="ghUser" placeholder="GitHub Username (e.g., J-Harris-Hunt)" />
     <input id="ghRepo" placeholder="Repo Name (wilmington-deal-hunter)" value="wilmington-deal-hunter" />
-    <input id="ghToken" type="password" placeholder="GitHub Personal Access Token (ghp_...)" />
+    <input id="ghToken" type="password" placeholder="GitHub Personal Access Token (github_pat_...)" />
     <button class="btn" onclick="saveConfig()">Save & Load Deals</button>
   </div>
 
-  <!-- Manual Scrape Control Panel -->
   <div class="panel hidden" id="scrapePanel">
     <strong>Manual Scrape Trigger</strong>
     <div class="sub">Select sources to scrape right now:</div>
@@ -70,7 +68,6 @@
     <div class="sub" id="scrapeStatus" style="margin-top:8px;"></div>
   </div>
 
-  <!-- Filter Bar -->
   <div style="padding: 8px 12px 0;">
     <input id="searchFilter" placeholder="Filter current deals (e.g., laptop, soldering, RTX, tablet)..." oninput="renderDeals()" />
   </div>
@@ -80,6 +77,16 @@
   <script>
     let cfg = JSON.parse(localStorage.getItem("dh_cfg") || "{}");
     let dealsData = { items: [] };
+    let pendingDeletes = new Set();
+    let flushTimer = null;
+    let isFlushing = false;
+
+    function b64ToUtf8(b64) {
+      const bin = atob(b64.replace(/\s/g, ""));
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new TextDecoder().decode(bytes);
+    }
 
     if (!cfg.user || !cfg.token) document.getElementById("setupPanel").classList.remove("hidden");
     else {
@@ -104,7 +111,6 @@
       fetchDeals();
     }
 
-    // Chip selection logic (All vs Individual/Multiple)
     document.querySelectorAll("#sourceChips .chip").forEach(chip => {
       chip.addEventListener("click", () => {
         const src = chip.dataset.src;
@@ -121,8 +127,13 @@
     });
 
     async function ghApi(path, method = "GET", body = null) {
-      const res = await fetch(`https://api.github.com/repos/${cfg.user}/${cfg.repo}/${path}`, {
+      const sep = path.includes("?") ? "&" : "?";
+      const url = method === "GET"
+        ? `https://api.github.com/repos/${cfg.user}/${cfg.repo}/${path}${sep}_=${Date.now()}`
+        : `https://api.github.com/repos/${cfg.user}/${cfg.repo}/${path}`;
+      const res = await fetch(url, {
         method,
+        cache: "no-store",
         headers: {
           "Authorization": `Bearer ${cfg.token}`,
           "Accept": "application/vnd.github+json",
@@ -137,8 +148,7 @@
     async function fetchDeals() {
       try {
         const file = await ghApi("contents/data/deals.json");
-        dealsData = JSON.parse(atob(file.content));
-        dealsData._sha = file.sha;
+        dealsData = JSON.parse(b64ToUtf8(file.content));
         document.getElementById("lastUpdated").innerText = `Updated: ${dealsData.last_updated} (${dealsData.items.length} deals)`;
         renderDeals();
       } catch (e) {
@@ -150,7 +160,8 @@
       const q = document.getElementById("searchFilter").value.toLowerCase();
       const container = document.getElementById("dealsList");
       const filtered = dealsData.items.filter(i =>
-        i.title.toLowerCase().includes(q) || i.source.toLowerCase().includes(q)
+        !pendingDeletes.has(i.id) &&
+        (i.title.toLowerCase().includes(q) || i.source.toLowerCase().includes(q))
       );
       container.innerHTML = filtered.map(item => `
         <div class="deal" id="card-${item.id}">
@@ -170,31 +181,65 @@
       `).join("") || `<div class="panel">No matching deals right now. Tap <b>Run Scrape</b> to check!</div>`;
     }
 
-    async function deleteForever(id) {
+    function deleteForever(id) {
       document.getElementById(`card-${id}`)?.remove();
       dealsData.items = dealsData.items.filter(i => i.id !== id);
+      pendingDeletes.add(id);
+      document.getElementById("lastUpdated").innerText = `Updated: ${dealsData.last_updated} (${dealsData.items.length} deals)`;
+
+      clearTimeout(flushTimer);
+      flushTimer = setTimeout(flushDeletesAtomic, 800);
+    }
+
+    async function flushDeletesAtomic() {
+      if (isFlushing || pendingDeletes.size === 0) return;
+      isFlushing = true;
+      const batch = Array.from(pendingDeletes);
+      pendingDeletes.clear();
+
       try {
-        // 1. Add ID to permanent blacklist.json
-        const blFile = await ghApi("contents/data/blacklist.json");
-        const bl = JSON.parse(atob(blFile.content));
-        if (!bl.includes(id)) bl.push(id);
-        await ghApi("contents/data/blacklist.json", "PUT", {
-          message: `Blacklist ${id}`,
-          content: btoa(JSON.stringify(bl, null, 2)),
-          sha: blFile.sha
+        // 1. Get latest main commit & tree directly from Git Data API (never cached)
+        const ref = await ghApi("git/ref/heads/main");
+        const latestCommitSha = ref.object.sha;
+        const commitData = await ghApi(`git/commits/${latestCommitSha}`);
+        const baseTreeSha = commitData.tree.sha;
+
+        // 2. Read current blobs directly by SHA
+        const [blFile, dealsFile] = await Promise.all([
+          ghApi("contents/data/blacklist.json"),
+          ghApi("contents/data/deals.json")
+        ]);
+        const blBlob = await ghApi(`git/blobs/${blFile.sha}`);
+        const dealsBlob = await ghApi(`git/blobs/${dealsFile.sha}`);
+
+        const bl = JSON.parse(b64ToUtf8(blBlob.content));
+        batch.forEach(id => { if (!bl.includes(id)) bl.push(id); });
+
+        const currentDeals = JSON.parse(b64ToUtf8(dealsBlob.content));
+        currentDeals.items = currentDeals.items.filter(i => !batch.includes(i.id));
+
+        // 3. Create new tree & commit updating both files at once
+        const newTree = await ghApi("git/trees", "POST", {
+          base_tree: baseTreeSha,
+          tree: [
+            { path: "data/blacklist.json", mode: "100644", type: "blob", content: JSON.stringify(bl, null, 2) },
+            { path: "data/deals.json", mode: "100644", type: "blob", content: JSON.stringify(currentDeals, null, 2) }
+          ]
         });
 
-        // 2. Remove from deals.json
-        const dealsFile = await ghApi("contents/data/deals.json");
-        const current = JSON.parse(atob(dealsFile.content));
-        current.items = current.items.filter(i => i.id !== id);
-        await ghApi("contents/data/deals.json", "PUT", {
-          message: `Remove ${id}`,
-          content: btoa(JSON.stringify(current, null, 2)),
-          sha: dealsFile.sha
+        const newCommit = await ghApi("git/commits", "POST", {
+          message: `Blacklist ${batch.length} item(s) [skip ci]`,
+          tree: newTree.sha,
+          parents: [latestCommitSha]
         });
+
+        await ghApi("git/refs/heads/main", "PATCH", { sha: newCommit.sha });
       } catch (e) {
-        alert("Failed to sync delete to GitHub: " + e.message);
+        console.error("Batch delete retry:", e);
+        batch.forEach(id => pendingDeletes.add(id));
+      } finally {
+        isFlushing = false;
+        if (pendingDeletes.size > 0) flushTimer = setTimeout(flushDeletesAtomic, 1000);
       }
     }
 
