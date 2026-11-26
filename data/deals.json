@@ -1,5 +1,5 @@
 {
-  "last_updated": "Nov 25, 09:10 PM EST",
+  "last_updated": "Nov 25, 09:11 PM EST",
   "items": [
     {
       "id": "4ee135de2bcd8ea6",
@@ -66,6 +66,17 @@
       "condition": "Local / Used",
       "url": "https://www.craigslist.org/view/d/wilmington-1545-inspiring-dell-laptop/hj2kQfV3Erunz8QAoE7uBv",
       "found_at": "Nov 25, 02:06 PM EST"
+    },
+    {
+      "id": "35e1cbb29ca59618",
+      "source": "Craigslist (Wilmington)",
+      "title": "Front End Rebuild Kit for Chevy Yukon & GMC K1500 Suburban 15 pieces",
+      "price": 125.0,
+      "list_price": null,
+      "discount_pct": 0,
+      "condition": "Local / Used",
+      "url": "https://www.craigslist.org/view/d/holly-ridge-front-end-rebuild-kit-for/9hWReuKUcNbM5rnzT1RPKB",
+      "found_at": "Nov 25, 09:11 PM EST"
     }
   ]
 }
