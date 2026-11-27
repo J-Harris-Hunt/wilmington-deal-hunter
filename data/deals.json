@@ -1,5 +1,5 @@
 {
-  "last_updated": "Nov 26, 11:41 PM EST",
+  "last_updated": "Nov 27, 04:33 PM EST",
   "items": [
     {
       "id": "4ee135de2bcd8ea6",
@@ -55,6 +55,17 @@
       "condition": "Local / Used",
       "url": "https://www.craigslist.org/view/d/wilmington-2014-kia-soul/9tT6MwXq8RGONuraz-poMQ",
       "found_at": "Nov 26, 11:41 PM EST"
+    },
+    {
+      "id": "ba3a8df1ce87e51a",
+      "source": "Craigslist (Wilmington)",
+      "title": "MSI MPG 271QRX QD-OLED 27\" Gaming Monitor 360Hz 0.03ms 1440p 16:9",
+      "price": 425.0,
+      "list_price": null,
+      "discount_pct": 0,
+      "condition": "Local / Used",
+      "url": "https://www.craigslist.org/view/d/bolivia-msi-mpg-271qrx-qd-oled-27/mckrpY6PeG8MDoQNV3Y3ik",
+      "found_at": "Nov 27, 04:33 PM EST"
     }
   ]
 }
