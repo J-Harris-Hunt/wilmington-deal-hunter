@@ -1,5 +1,5 @@
 {
-  "last_updated": "Nov 27, 04:33 PM EST",
+  "last_updated": "Nov 27, 11:27 PM EST",
   "items": [
     {
       "id": "4ee135de2bcd8ea6",
@@ -66,6 +66,17 @@
       "condition": "Local / Used",
       "url": "https://www.craigslist.org/view/d/bolivia-msi-mpg-271qrx-qd-oled-27/mckrpY6PeG8MDoQNV3Y3ik",
       "found_at": "Nov 27, 04:33 PM EST"
+    },
+    {
+      "id": "ac24d86fa348d4ca",
+      "source": "Craigslist (Wilmington)",
+      "title": "MSI MPG MT201R V2 Premium RGB Single Monitor Arm 17-49\" Screens VESA",
+      "price": 79.0,
+      "list_price": null,
+      "discount_pct": 0,
+      "condition": "Local / Used",
+      "url": "https://www.craigslist.org/view/d/bolivia-msi-mpg-mt201r-v2-premium-rgb/j7GcBUuvKmQKPTSd2tHbR4",
+      "found_at": "Nov 27, 11:27 PM EST"
     }
   ]
 }
